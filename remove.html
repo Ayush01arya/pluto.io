@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Background Remover</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background-color: #f4f4f4;
+            margin: 0;
+        }
+        .container {
+            background-color: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            color: #4D3CBE;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        label {
+            background-color: #4D3CBE;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-bottom: 20px;
+            display: inline-block;
+        }
+        label:hover {
+            background-color: #372E9C;
+        }
+        #uploadBtn {
+            background-color: #4D3CBE;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+            display: inline-block;
+        }
+        #uploadBtn:hover {
+            background-color: #372E9C;
+        }
+        #downloadBtn {
+            background-color: #28a745;
+            color: white;
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-top: 20px;
+            display: none;
+        }
+        #downloadBtn:hover {
+            background-color: #218838;
+        }
+        #imagePreview, #imageProcessed {
+            margin-top: 20px;
+        }
+        img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 10px;
+            margin-top: 10px;
+        }
+        .message {
+            font-size: 14px;
+            color: #888;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="container">
+        <h1>Image Background Remover</h1>
+
+        <label for="imageInput">Choose Image</label>
+        <input type="file" id="imageInput" accept="image/*">
+
+        <div id="imagePreview"></div>
+
+        <button id="uploadBtn" style="display:none;">Remove Background</button>
+        <div id="imageProcessed"></div>
+
+        <button id="downloadBtn">Download Image</button>
+
+        <div class="message">Upload an image to remove the background</div>
+    </div>
+
+    <script>
+        const uploadBtn = document.getElementById('uploadBtn');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const imageProcessed = document.getElementById('imageProcessed');
+        const downloadBtn = document.getElementById('downloadBtn');
+
+        let processedImgURL = ''; // To store the processed image URL
+
+        // Show image preview when an image is selected
+        imageInput.addEventListener('change', () => {
+            const file = imageInput.files[0];
+
+            if (file) {
+                const imgURL = URL.createObjectURL(file);
+                imagePreview.innerHTML = `<img src="${imgURL}" alt="Original Image">`;
+                uploadBtn.style.display = 'inline-block'; // Show the upload button
+                imageProcessed.innerHTML = ''; // Clear previous processed image if any
+                downloadBtn.style.display = 'none'; // Hide download button until image is processed
+            }
+        });
+
+        // Handle upload and background removal
+        uploadBtn.addEventListener('click', async () => {
+            const file = imageInput.files[0];
+
+            if (!file) {
+                alert('Please select an image first.');
+                return;
+            }
+
+            const formData = new FormData();
+            formData.append('image', file);
+
+            try {
+                const response = await fetch('http://127.0.0.1:5000/remove-bg', {
+                    method: 'POST',
+                    body: formData,
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to process the image.');
+                }
+
+                const blob = await response.blob();
+                processedImgURL = URL.createObjectURL(blob);
+
+                // Display the processed image
+                imageProcessed.innerHTML = `<img src="${processedImgURL}" alt="Processed Image">`;
+                downloadBtn.style.display = 'inline-block'; // Show the download button
+            } catch (error) {
+                alert(error.message);
+            }
+        });
+
+        // Handle download of the processed image
+        downloadBtn.addEventListener('click', () => {
+            const a = document.createElement('a');
+            a.href = processedImgURL;
+            a.download = 'processed-image.png'; // Set the file name for download
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a); // Clean up after click
+        });
+    </script>
+
+</body>
+</html>
