@@ -10,7 +10,7 @@ app = Flask(__name__)
 CORS(app)
 
 # Set up database URI and configuration
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///users.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///Ayush.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
@@ -212,7 +212,7 @@ def send_email(gmail_user, app_password, to_email, company_name, specific_role,h
                         <a href="https://linkedin.com/in/ayusharya25">
                             <img src="https://img.icons8.com/ios-filled/50/000000/linkedin.png" class="icon" alt="LinkedIn">LinkedIn
                         </a> |
-                        <a href="https://ayusharya.me/assets/0Ayush_Arya_Resume.pdf">
+                        <a href="https://ayusharya.me/assets/resume.pdf">
                             <img src="https://img.icons8.com/ios-filled/50/resume.png" class="icon" alt="Resume">Resume
                         </a> 
 
@@ -377,105 +377,104 @@ from concurrent.futures import ThreadPoolExecutor
 
 
 # Add this new route for the Pulser feature
+from flask import jsonify
+from concurrent.futures import ThreadPoolExecutor
+import time
+from datetime import datetime
+import logging
+
+
 @app.route('/api/pulse_emails', methods=['POST'])
 def pulse_emails():
-    BATCH_SIZE = 500  # Gmail's limit is ~100 emails per day
+    BATCH_SIZE = 85  # Gmail's batch limit
+    DELAY_MINUTES = 10  # Delay between batches
+    MAX_WORKERS = 3  # Number of concurrent threads
+
+    logging.basicConfig(level=logging.INFO)
+    logger = logging.getLogger(__name__)
 
     users = User.query.all()
-
     total_users = len(users)
     successful_sends = []
 
-    results = {
-
-        'success': True,
-
-        'sent_count': 0,
-
-        'remaining': 0,
-
-        'errors': []
-
-    }
-
     def send_with_rate_limit(user):
-
         try:
-
             hr_name = "Sir" if user.hr_gender == "M" else "Mam"
-
             email_sent = send_email(
-
                 gmail_user=GMAIL_USER,
-
                 app_password=APP_PASSWORD,
-
                 to_email=user.email,
-
                 company_name=user.company_name,
-
                 specific_role=user.post,
-
                 hr_name=hr_name
-
             )
 
             if email_sent:
-                print(f"Successfully sent email to: {user.email}")
+                logger.info(f"Successfully sent email to: {user.email}")
                 user.email_sent_count += 1
-                successful_sends.append(user.email)  # Track success
+                successful_sends.append(user.email)
                 db.session.add(user)
-                db.session.commit()  # Commit per successful send
+                db.session.commit()
                 return True
-            # print(f"Failed to send email to: {user.email}")
+
+            logger.warning(f"Failed to send email to: {user.email}")
             return False
 
         except Exception as e:
-
-            # print(f"Error sending to {user.email}: {str(e)}")
-
+            logger.error(f"Error sending to {user.email}: {str(e)}")
             return False
 
-    try:
-
-        # Process first batch only
-
-        current_batch = users[:BATCH_SIZE]
-
-        with ThreadPoolExecutor(max_workers=3) as executor:
-
-            future_to_user = {executor.submit(send_with_rate_limit, user): user
-
-                              for user in current_batch}
+    def process_batch(batch_users):
+        sent_count = 0
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_user = {
+                executor.submit(send_with_rate_limit, user): user
+                for user in batch_users
+            }
 
             for future in future_to_user:
-
                 if future.result():
-                    results['sent_count'] += 1
+                    sent_count += 1
+                time.sleep(1)  # Small delay between individual sends
 
-                time.sleep(1)  # Rate limiting
+        return sent_count
+
+    try:
+        total_sent = 0
+        batch_number = 0
+
+        while total_sent < total_users:
+            batch_start = batch_number * BATCH_SIZE
+            batch_end = min(batch_start + BATCH_SIZE, total_users)
+            current_batch = users[batch_start:batch_end]
+
+            if batch_number > 0:
+                logger.info(f"Waiting {DELAY_MINUTES} minutes before processing batch {batch_number + 1}")
+                time.sleep(DELAY_MINUTES * 60)  # Convert minutes to seconds
+
+            logger.info(f"Processing batch {batch_number + 1} ({len(current_batch)} users)")
+            batch_sent = process_batch(current_batch)
+            total_sent += batch_sent
+
+            logger.info(f"Batch {batch_number + 1} complete. Sent {batch_sent} emails successfully")
+            batch_number += 1
 
         db.session.commit()
 
-        results['remaining'] = total_users - BATCH_SIZE
-
         return jsonify({
             'success': True,
-            'sent_count': len(successful_sends),
-            'remaining': total_users - BATCH_SIZE,
-            'successful_emails': successful_sends
+            'total_sent': total_sent,
+            'remaining': total_users - total_sent,
+            'successful_emails': successful_sends,
+            'batches_processed': batch_number
         })
 
     except Exception as e:
-
+        logger.error(f"Error in batch processing: {str(e)}")
         db.session.rollback()
-
         return jsonify({
-
             'success': False,
-
             'error': str(e)
-
         }), 500
 if __name__ == '__main__':
     with app.app_context():
